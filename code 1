@@ -1,0 +1,88 @@
+#importing stuff
+
+from pymatgen.ext.matproj import MPRester
+from matminer.featurizers.conversions import StrToComposition
+from matminer.featurizers.composition import ElementProperty, ElementFraction, Meredig, Stoichiometry
+import sklearn
+from sklearn.decomposition import PCA
+from sklearn.preprocessing import StandardScaler, normalize
+from sklearn.ensemble import RandomForestRegressor
+from sklearn.model_selection import train_test_split, cross_validate, GridSearchCV
+from sklearn.metrics import mean_squared_error as mse
+
+from materials_project_api_key import api_key as api_key
+
+import os
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+from tqdm import tqdm
+import scipy
+
+import warnings
+warnings.filterwarnings('ignore')
+
+MP_API_KEY="zJTA8MUZaSc3lxtI"
+
+
+#creating dataframe
+
+properties = ['material_id',
+ 'formula','spacegroup.symbol',
+ 'structure',
+ "band_gap",
+ 'nsites',
+ 'elements',
+ 'nelements',
+ 'formula_anonymous',
+ 'chemsys',
+ 'volume',
+ 'density',
+ 'deprecated',
+ 'task_ids',
+ 'last_updated',
+ 'created_at']
+ 
+elements = ["Zn"]
+data = []
+for e in elements:
+    criteria = {"elements": {"$all": [e]}}
+    with MPRester(MP_API_KEY) as m:  
+        temp = m.query(criteria=criteria, properties=properties)
+        data.append(temp)
+data = [item for sublist in data for item in sublist]
+data = pd.DataFrame(data)
+
+#cleaning
+
+data=data.query("band_gap != 0")
+
+# Get atom total counts
+atom_counts = {}
+for row in tqdm(data.formula):
+    for key in row.keys():
+        atom_counts[key] = atom_counts[key] + row[key] if key in atom_counts.keys() else row[key]
+atom_counts = pd.Series({ key:atom_counts[key] for key in sorted(atom_counts.keys()) })
+
+# Get crystal atom counts
+crystal_atom_counts = {}
+for row in tqdm(data.formula):
+    for key in row.keys():
+        crystal_atom_counts[key] = crystal_atom_counts[key] + 1 if key in crystal_atom_counts.keys() else 1
+crystal_atom_counts = pd.Series({ key:crystal_atom_counts[key] for key in sorted(crystal_atom_counts.keys()) })
+
+# Only choose structures with elements that are well represented in the dataset
+n_crystals_cutoff = (len(data)*0.04)
+elements = [key for key in crystal_atom_counts.keys() if crystal_atom_counts[key] >= n_crystals_cutoff]
+print(f"Allowed Elements: {elements}")
+print(f"Number of Elements: {len(elements)}")
+
+# Lets now filter the structures
+mask = [row[1].name for row in data.iterrows() if np.all(np.isin(list(row[1].formula.keys()), elements))]
+filtered = data.loc[mask]
+filtered = filtered.loc[filtered.band_gap > 0]
+
+
+
+
+ 
